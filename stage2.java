@@ -1,6 +1,8 @@
 import java.net.*;  
 import java.io.*;  
 import java.util.*;
+
+
 public class stage2{  
 
     //Global variables
@@ -8,23 +10,23 @@ public class stage2{
     BufferedReader in;
     DataOutputStream out;
     String str;
+    String server;
     boolean run = true;
     boolean first = true;
     String username = System.getProperty("user.name");
-    int jobID = 0, core = 0, memory = 0, disk = 0;
+    int jobID = 0, core, ram, disk;
     int serverID;
     int count;
     String[] jobarray;
     String type;
     String[] serverarray;
-    String[] firstcapable;
+    String[] firstavail;
 
     //gets IP address and port and establishes a connection with server
     public stage2(String address, int port) {
 
         try{
             s = new Socket(address, port);
-           // System.out.println("Connection Established");
             in = new BufferedReader(new InputStreamReader(s.getInputStream()));
             out = new DataOutputStream(s.getOutputStream());
         }
@@ -38,63 +40,93 @@ public class stage2{
         //First step handshake
         out.write(("HELO\n").getBytes());
         out.flush();
-        str = svrrecievString();
+        str = svrreceiveString();
+
         //second step handshake
         out.write(("AUTH " + username + "\n").getBytes());
         out.flush();
-        str = svrrecievString();
+        str = svrreceiveString();
+
         //final step handshake
         out.write(("REDY\n").getBytes());
         out.flush();
-        str = svrrecievString();
+        str = svrreceiveString();
 
 
         while (run){
             if (str.equals("OK")){
                 out.write(("REDY\n").getBytes());
                 out.flush();
-                str = svrrecievString();
-                //System.out.println(str);
+                str = svrreceiveString();
             }
+
             //breaks out of loop when run out of jobs
-            if (str.equals("NONE")){
+            if (str.contains("NONE")){
                 run = false;
                 break;
             }
+
             if (str.contains("JOBN")){
+                //splits jobn
                 jobarray = str.split(" ");
+
+                //saves the job info
                 jobID = Integer.parseInt(jobarray[2]);
                 core = Integer.parseInt(jobarray[4]);
-                memory = Integer.parseInt(jobarray[5]);
+                ram = Integer.parseInt(jobarray[5]);
                 disk = Integer.parseInt(jobarray[6]);
-                //Sends Gets Capable
-                out.write(("GETS Capable" + " " + core + " " + memory + " " + disk + "\n").getBytes());
+
+                //Sends Gets Avail for specific job size
+                out.write(("GETS Avail" + " " + jobarray[4] + " " + jobarray[5] + " " + jobarray[6] + "\n").getBytes());
                 out.flush();
-                str = svrrecievString();
-                serverarray = str.split(" ");
+
+                //Saves amount of Avail servers
+                server = svrreceiveString();
+                serverarray = server.split(" ");
                 count = Integer.parseInt(serverarray[1]);
                 out.write(("OK\n").getBytes());
                 out.flush();
-                str = svrrecievString();
-                for(int i=0;i<count;i++){
-                    firstcapable = str.split(" ");
-                    if(first){
-                        type = firstcapable[0];
-                        serverID = Integer.parseInt(firstcapable[1]);
+
+                ArrayList<String> servers = new ArrayList<>(count);
+                    //stores Avail servers to an arrayList
+                    for (int i = 0; i< count; i++){
+                        servers.add(svrreceiveString());
                     }
-                    first = false;
+                //If Gets Avail has no servers does Capable instead
+                if(count ==0){
+                    svrreceiveString();
+                    out.write(("GETS Capable" + " " + jobarray[4] + " " + jobarray[5] + " " + jobarray[6] + "\n").getBytes());
+                    out.flush();
+
+                    //Gets amount of Capable servers
+                    server = svrreceiveString();
+                    serverarray = server.split(" ");
+                    count = Integer.parseInt(serverarray[1]);
+                    out.write(("OK\n").getBytes());
+                    out.flush();
+
+                    //Stores capable servers to an arraylist
+                    for (int i = 0; i< count; i++){
+                        servers.add(svrreceiveString());
+                    }
                 }
+                // save server type and ID
+                type = servers.get(0).split(" ")[0];
+                serverID = Integer.parseInt(servers.get(0).split(" ")[1]); 
                 out.write(("OK\n").getBytes());
                 out.flush();
-                str = svrrecievString();
+                str = svrreceiveString();
+
+                // Schedules the job
                 out.write(("SCHD " + jobID + " " + type + " " + serverID + "\n").getBytes());
                 out.flush();
-                str = svrrecievString();
+                str = svrreceiveString();
             }
+            //Gets new job if JCPL is received
             if(str.contains("JCPL")){
                 out.write(("REDY\n").getBytes());
                 out.flush();
-                str = svrrecievString();
+                str = svrreceiveString();
             }
         }
         closeConnection();
@@ -107,7 +139,6 @@ public class stage2{
             in.close();
             out.close();
             s.close();
-            //System.out.println("Terminating here");
         } catch(IOException ioException){
             System.out.println(ioException);
         }
@@ -115,17 +146,16 @@ public class stage2{
     }
 
     //Messages recieved from the socket
-    public String svrrecievString(){
+    public String svrreceiveString(){
 
         String handstr = "";
         try {
         handstr = in.readLine();
-        str = handstr;
         }catch (IOException ioException){
             System.out.println(ioException);
         }
 
-        return str;
+        return handstr;
     }
 
     public static void main (String args[]) throws IOException{
